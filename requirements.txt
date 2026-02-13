@@ -1,0 +1,26 @@
+
+# Forum Collector Dependencies
+
+# Async HTTP client
+aiohttp>=3.9.0
+
+# Backoff for retries
+backoff>=2.2.0
+
+# YAML configuration support
+PyYAML>=6.0
+
+# Optional: For better HTML parsing
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Optional: For more advanced NLP features
+# textblob>=0.17.0
+# jieba>=0.42.0  # Chinese text segmentation
+
+# Optional: For MongoDB storage
+# pymongo>=4.6.0
+
+# Optional: For web API
+# fastapi>=0.109.0
+# uvicorn>=0.25.0

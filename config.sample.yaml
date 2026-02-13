@@ -1,0 +1,140 @@
+
+# Forum Collector Configuration
+# Copy this file to config.yaml and modify as needed
+
+# General settings
+app_name: "Forum Collector"
+debug: false
+log_level: "INFO"
+
+# Collection settings
+default_max_posts: 100
+default_max_comments: 50
+collection_interval_hours: 1
+
+# Storage settings
+storage_type: "json"  # json or sqlite
+storage_path: "./data"
+
+# API settings (optional)
+api_enabled: true
+api_host: "0.0.0.0"
+api_port: 8080
+
+# Proxy settings (optional)
+proxy_enabled: false
+proxy_url: null
+
+# Rate limiting
+rate_limit_enabled: true
+requests_per_second: 2
+
+# Collector configurations
+collectors:
+  # Hacker News - Free, no auth required
+  hacker_news:
+    source: "hacker_news"
+    enabled: true
+    max_posts: 50
+    custom_params:
+      include_ask_hn: true
+      include_show_hn: true
+      include_jobs: false
+
+  # Reddit - Requires OAuth credentials
+  reddit:
+    source: "reddit"
+    enabled: true
+    max_posts: 50
+    api_key: "YOUR_CLIENT_ID"
+    api_secret: "YOUR_CLIENT_SECRET"
+    custom_params:
+      subreddits:
+        - "programming"
+        - "technology"
+        - "python"
+        - "javascript"
+        - "machinelearning"
+
+  # V2EX - Chinese tech community
+  v2ex:
+    source: "v2ex"
+    enabled: true
+    max_posts: 50
+    access_token: null  # Optional for higher rate limits
+    custom_params:
+      nodes:
+        - "python"
+        - "programmer"
+        - "share"
+        - "mac"
+        - "dev"
+
+  # Zhihu - Chinese Q&A platform
+  zhihu:
+    source: "zhihu"
+    enabled: true
+    max_posts: 50
+    access_token: null  # Optional
+    custom_params:
+      topics: []
+
+  # Douban Groups - Chinese interest groups
+  douban:
+    source: "douban"
+    enabled: true
+    max_posts: 50
+    cookie: null  # Optional for authenticated access
+    custom_params:
+      groups:
+        - "gossip"
+        - "tech"
+        - "programmer"
+        - "python"
+        - "ai"
+        - "startup"
+        - "remote"
+
+  # Lobsters - Tech news aggregator
+  lobsters:
+    source: "lobsters"
+    enabled: true
+    max_posts: 30
+
+  # Dev.to - Developer community
+  dev_to:
+    source: "dev_to"
+    enabled: true
+    max_posts: 50
+
+  # Product Hunt - New products
+  product_hunt:
+    source: "product_hunt"
+    enabled: true
+    max_posts: 30
+    api_key: null  # Required for full access
+
+  # Stack Overflow - Q&A
+  stack_overflow:
+    source: "stack_overflow"
+    enabled: true
+    max_posts: 50
+    api_key: null  # Optional for higher rate limits
+    custom_params:
+      tags:
+        - "python"
+        - "javascript"
+        - "java"
+        - "go"
+
+  # GitHub Discussions
+  github:
+    source: "github_discussions"
+    enabled: true
+    max_posts: 30
+    access_token: null  # GitHub Personal Access Token
+    custom_params:
+      repositories:
+        - "microsoft/vscode"
+        - "facebook/react"
+        - "golang/go"
