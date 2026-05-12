@@ -7,7 +7,7 @@ import asyncio
 import aiohttp
 import backoff
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 import sys
 import os
@@ -42,6 +42,9 @@ class BaseCollector(ABC):
     
     async def __aenter__(self):
         """Async context manager entry."""
+        # Configure proxy if available
+        proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
+        
         self.session = aiohttp.ClientSession(
             headers=self._get_headers(),
             timeout=aiohttp.ClientTimeout(total=30)
@@ -74,31 +77,49 @@ class BaseCollector(ABC):
         method: str = 'GET'
     ) -> Optional[Dict[str, Any]]:
         """Make an HTTP request with retry logic."""
+        import time
+        
         if not self.session:
             raise RuntimeError("Session not initialized. Use async context manager.")
         
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         
+        # Get proxy from environment
+        proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
+        
+        start_time = time.time()
+        
+        # Log request details at DEBUG level
+        log_params = f" params={params}" if params else ""
+        logger.debug(f"[HTTP Request] {method} {url}{log_params}")
+        
         try:
-            async with self.session.request(method, url, params=params) as response:
+            async with self.session.request(method, url, params=params, proxy=proxy) as response:
+                elapsed = time.time() - start_time
                 self._update_rate_limits(response)
+                
+                # Log response with status and timing at INFO level
+                status_emoji = "✓" if response.status < 400 else "✗"
+                logger.info(f"[HTTP] {status_emoji} {method} {url} -> {response.status} ({elapsed:.2f}s)")
                 
                 if response.status == 429:
                     # Rate limited - wait and retry
                     retry_after = int(response.headers.get('Retry-After', 60))
-                    logger.warning(f"Rate limited. Waiting {retry_after} seconds.")
+                    logger.warning(f"[HTTP Rate Limited] {url} - waiting {retry_after}s before retry")
                     await asyncio.sleep(retry_after)
                     return await self._make_request(endpoint, params, method)
                 
                 if response.status == 404:
-                    logger.warning(f"Resource not found: {url}")
+                    logger.warning(f"[HTTP Not Found] {url}")
                     return None
                 
                 response.raise_for_status()
+                
                 return await response.json()
                 
         except aiohttp.ClientError as e:
-            logger.error(f"Request failed for {url}: {e}")
+            elapsed = time.time() - start_time
+            logger.error(f"[HTTP Error] {method} {url} failed after {elapsed:.2f}s: {e}")
             raise
     
     def _update_rate_limits(self, response: aiohttp.ClientResponse):
@@ -180,12 +201,24 @@ class BaseCollector(ABC):
             True if post passes all filters
         """
         # Check minimum score
-        if post.score < self.config.min_score:
+        try:
+            score = float(post.score)
+            if score < self.config.min_score:
+                return False
+        except (TypeError, ValueError):
             return False
         
         # Check time range
         if self.config.time_range_hours and post.created_at:
-            hours_since = (datetime.now() - post.created_at).total_seconds() / 3600
+            # Handle both naive and timezone-aware datetimes
+            current_time = datetime.now(timezone.utc)
+            post_time = post.created_at
+            
+            # Convert to timezone-aware if post.created_at is naive
+            if post_time.tzinfo is None:
+                post_time = post_time.replace(tzinfo=timezone.utc)
+            
+            hours_since = (current_time - post_time).total_seconds() / 3600
             if hours_since > self.config.time_range_hours:
                 return False
         

@@ -93,20 +93,44 @@ class LobstersCollector(BaseCollector):
         """Parse Lobsters story data into Post object."""
         try:
             author = None
-            if data.get('submitter_user'):
-                user = data['submitter_user']
+            submitter_user = data.get('submitter_user')
+            if submitter_user:
+                # submitter_user can be a string (username) or a dict with user info
+                if isinstance(submitter_user, str):
+                    username = submitter_user
+                    avatar_url = None
+                    bio = None
+                else:
+                    username = submitter_user.get('username', 'Unknown')
+                    avatar_url = submitter_user.get('avatar_url')
+                    bio = submitter_user.get('about')
+                
                 author = Author(
-                    username=user.get('username', 'Unknown'),
-                    profile_url=f"https://lobste.rs/u/{user.get('username')}",
-                    avatar_url=user.get('avatar_url'),
-                    bio=user.get('about')
+                    username=username,
+                    profile_url=f"https://lobste.rs/u/{username}",
+                    avatar_url=avatar_url,
+                    bio=bio
                 )
             
             created_at = datetime.fromisoformat(data['created_at'].replace('Z', '+00:00')) if data.get('created_at') else None
             
+            # Handle tags - can be list of strings or list of dicts
             tags = []
-            if data.get('tags'):
-                tags = [tag.get('tag', '') for tag in data['tags']]
+            raw_tags = data.get('tags', [])
+            if raw_tags:
+                # Check if tags are strings or dicts
+                if isinstance(raw_tags[0], str):
+                    tags = raw_tags  # Already strings
+                else:
+                    tags = [tag.get('tag', '') for tag in raw_tags]
+            
+            # Extract category (first tag)
+            category = None
+            if raw_tags:
+                if isinstance(raw_tags[0], str):
+                    category = raw_tags[0] if raw_tags else None
+                else:
+                    category = raw_tags[0].get('tag') if raw_tags else None
             
             # Determine URL
             url = data.get('url')
@@ -124,7 +148,7 @@ class LobstersCollector(BaseCollector):
                 upvotes=data.get('score', 0),
                 comments_count=data.get('comment_count', 0),
                 tags=tags,
-                category=data.get('tags', [{}])[0].get('tag') if data.get('tags') else None,
+                category=category,
                 metadata={
                     'short_id': data.get('short_id'),
                     'short_id_url': data.get('short_id_url'),

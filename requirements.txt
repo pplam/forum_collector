@@ -24,3 +24,6 @@ lxml>=4.9.0
 # Optional: For web API
 # fastapi>=0.109.0
 # uvicorn>=0.25.0
+
+# For web view
+flask>=3.0.0

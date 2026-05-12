@@ -12,6 +12,7 @@ from .v2ex_collector import V2EXCollector
 from .zhihu_collector import ZhihuCollector
 from .lobsters_collector import LobstersCollector
 from .douban_collector import DoubanCollector
+from .indiehackers_collector import IndieHackersCollector
 
 __all__ = [
     'BaseCollector',
@@ -24,5 +25,6 @@ __all__ = [
     'V2EXCollector',
     'ZhihuCollector',
     'LobstersCollector',
-    'DoubanCollector'
+    'DoubanCollector',
+    'IndieHackersCollector'
 ]

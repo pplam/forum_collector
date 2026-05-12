@@ -151,24 +151,47 @@ class GitHubDiscussionsCollector(BaseCollector):
         variables: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Make a GraphQL request to GitHub API."""
+        import time
+        
         if not self.session:
             raise RuntimeError("Session not initialized")
+        
+        start_time = time.time()
+        
+        # Log GraphQL request at DEBUG level
+        query_preview = query[:100] + "..." if len(query) > 100 else query
+        logger.debug(f"[HTTP Request] POST {self.BASE_GRAPHQL_URL} (GraphQL)")
+        logger.debug(f"[GraphQL Query] {query_preview}")
+        if variables:
+            logger.debug(f"[GraphQL Variables] {variables}")
         
         try:
             async with self.session.post(
                 self.BASE_GRAPHQL_URL,
                 json={'query': query, 'variables': variables}
             ) as response:
+                elapsed = time.time() - start_time
+                
+                # Log response at INFO level
+                status_emoji = "✓" if response.status < 400 else "✗"
+                logger.info(f"[HTTP] {status_emoji} POST {self.BASE_GRAPHQL_URL} -> {response.status} ({elapsed:.2f}s)")
+                
                 if response.status == 401:
-                    logger.error("GitHub authentication failed")
+                    logger.error("[HTTP Auth Error] GitHub authentication failed")
                     return None
                 
                 response.raise_for_status()
                 data = await response.json()
+                
+                # Check for GraphQL errors
+                if data.get('errors'):
+                    logger.error(f"[GraphQL Error] GitHub returned errors: {data['errors']}")
+                
                 return data.get('data')
                 
         except Exception as e:
-            logger.error(f"GraphQL request failed: {e}")
+            elapsed = time.time() - start_time
+            logger.error(f"[HTTP Error] POST {self.BASE_GRAPHQL_URL} failed after {elapsed:.2f}s: {e}")
             return None
     
     def _parse_discussion(self, data: Dict[str, Any], repo: str) -> Optional[Post]:

@@ -4,7 +4,7 @@
 import re
 import html
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Callable
 import functools
 import logging
@@ -129,7 +129,7 @@ def calculate_trending_score(
     upvotes: int,
     comments_count: int,
     views: int,
-    created_at: datetime,
+    created_at: Optional[datetime],
     current_time: Optional[datetime] = None
 ) -> float:
     """Calculate a trending score for a post.
@@ -139,21 +139,31 @@ def calculate_trending_score(
     Args:
         upvotes: Number of upvotes
         comments_count: Number of comments
-        views: Number of views
-        created_at: Post creation time
+        views: Number of views (can be None)
+        created_at: Post creation time (can be None)
         current_time: Current time (defaults to now)
         
     Returns:
         Trending score
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
     
-    # Calculate engagement score
+    # Handle None created_at - use current time as fallback
+    if created_at is None:
+        return 0.0
+    
+    # Handle both naive and timezone-aware datetimes
+    post_time = created_at
+    if post_time.tzinfo is None:
+        post_time = post_time.replace(tzinfo=timezone.utc)
+    
+    # Calculate engagement score (handle None views)
+    views = views or 0
     engagement = upvotes * 1.0 + comments_count * 2.0 + views * 0.001
     
     # Time decay factor (using HN-like algorithm)
-    hours_since = (current_time - created_at).total_seconds() / 3600
+    hours_since = (current_time - post_time).total_seconds() / 3600
     
     # Gravity factor (higher = faster decay)
     gravity = 1.8
@@ -169,7 +179,7 @@ def calculate_viral_potential(
     comments_count: int,
     shares: int,
     views: int,
-    created_at: datetime,
+    created_at: Optional[datetime],
     current_time: Optional[datetime] = None
 ) -> float:
     """Calculate viral potential score (0-1).
@@ -181,16 +191,25 @@ def calculate_viral_potential(
         comments_count: Number of comments
         shares: Number of shares
         views: Number of views
-        created_at: Post creation time
+        created_at: Post creation time (can be None)
         current_time: Current time (defaults to now)
         
     Returns:
         Viral potential score (0-1)
     """
     if current_time is None:
-        current_time = datetime.now()
+        current_time = datetime.now(timezone.utc)
     
-    hours_since = (current_time - created_at).total_seconds() / 3600
+    # Handle None created_at - return minimal viral potential
+    if created_at is None:
+        return 0.0
+    
+    # Handle both naive and timezone-aware datetimes
+    post_time = created_at
+    if post_time.tzinfo is None:
+        post_time = post_time.replace(tzinfo=timezone.utc)
+    
+    hours_since = (current_time - post_time).total_seconds() / 3600
     
     if hours_since <= 0:
         hours_since = 0.1
@@ -201,6 +220,7 @@ def calculate_viral_potential(
     share_rate = shares / hours_since if shares > 0 else 0
     
     # View to engagement ratio
+    views = views or 0
     if views > 0:
         engagement_ratio = (upvotes + comments_count) / views
     else:

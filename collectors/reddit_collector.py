@@ -5,6 +5,8 @@ import asyncio
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import logging
+import time
+import aiohttp
 
 import sys
 import os
@@ -33,7 +35,10 @@ class RedditCollector(BaseCollector):
     
     @property
     def base_url(self) -> str:
-        return "https://oauth.reddit.com"
+        # Use public Reddit API if no credentials, otherwise use OAuth
+        if self.client_id and self.client_secret:
+            return "https://oauth.reddit.com"
+        return "https://www.reddit.com"
     
     def _get_headers(self) -> Dict[str, str]:
         headers = super()._get_headers()
@@ -50,19 +55,35 @@ class RedditCollector(BaseCollector):
         auth_url = "https://www.reddit.com/api/v1/access_token"
         auth = aiohttp.BasicAuth(self.client_id, self.client_secret)
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                auth_url,
-                auth=auth,
-                data={'grant_type': 'client_credentials'},
-                headers={'User-Agent': 'ForumCollector/1.0'}
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    self._access_token = data.get('access_token')
-                    logger.info("Successfully authenticated with Reddit API")
-                else:
-                    logger.warning("Failed to authenticate with Reddit API")
+        start_time = time.time()
+        
+        # Log OAuth request at DEBUG level
+        logger.debug(f"[HTTP Request] POST {auth_url} (OAuth)")
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    auth_url,
+                    auth=auth,
+                    data={'grant_type': 'client_credentials'},
+                    headers={'User-Agent': 'ForumCollector/1.0'}
+                ) as response:
+                    elapsed = time.time() - start_time
+                    
+                    # Log response at INFO level
+                    status_emoji = "✓" if response.status == 200 else "✗"
+                    logger.info(f"[HTTP] {status_emoji} POST {auth_url} -> {response.status} ({elapsed:.2f}s)")
+                    
+                    if response.status == 200:
+                        data = await response.json()
+                        self._access_token = data.get('access_token')
+                        logger.info("[Auth Success] Reddit API authentication successful")
+                    else:
+                        logger.warning(f"[Auth Failed] Reddit API authentication failed with status: {response.status}")
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[HTTP Error] POST {auth_url} failed after {elapsed:.2f}s: {e}")
+            raise
     
     async def collect_hot_posts(self, limit: Optional[int] = None) -> CollectionResult:
         """Collect hot posts from configured subreddits."""
@@ -96,7 +117,7 @@ class RedditCollector(BaseCollector):
     
     async def _collect_subreddit_hot(self, subreddit: str, limit: int) -> List[Post]:
         """Collect hot posts from a specific subreddit."""
-        endpoint = f"/r/{subreddit}/hot"
+        endpoint = f"/r/{subreddit}/hot.json"
         params = {'limit': min(limit, 100)}
         
         data = await self._make_request(endpoint, params)

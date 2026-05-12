@@ -5,10 +5,12 @@
 import asyncio
 import re
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import html
 import json
+import aiohttp
+import backoff
 
 import sys
 import os
@@ -35,12 +37,9 @@ class DoubanCollector(BaseCollector):
     API_BASE_URL = "https://douban.com/j"
     
     # Popular Douban groups for tech/lifestyle content
+    # Default groups as fallback if hot groups discovery fails
     DEFAULT_GROUPS = [
-        'gossip',       # 吃瓜贴
-        'tech',         # 技术
-        'programmer',   # 程序员
-        'python',       # Python
-        'ai',           # AI人工智能
+        'ai',           # AI人工智能 - this one works!
         'startup',      # 创业
         'remote',       # 远程工作
         'book',         # 书籍
@@ -52,6 +51,16 @@ class DoubanCollector(BaseCollector):
         super().__init__(config)
         self.cookie = cookie
         self._groups = config.custom_params.get('groups', self.DEFAULT_GROUPS)
+        # Track if we should use proxy (we don't want to for Douban)
+        self._use_proxy = False
+    
+    async def __aenter__(self):
+        """Async context manager entry - override to use proxy for Douban."""
+        self.session = aiohttp.ClientSession(
+            headers=self._get_headers(),
+            timeout=aiohttp.ClientTimeout(total=30)
+        )
+        return self
     
     @property
     def source(self) -> ForumSource:
@@ -62,16 +71,146 @@ class DoubanCollector(BaseCollector):
         return self.BASE_URL
     
     def _get_headers(self) -> Dict[str, str]:
-        headers = super()._get_headers()
-        headers.update({
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-            'Cache-Control': 'no-cache',
-            'Referer': 'https://www.douban.com/',
-        })
+        # Minimal headers to avoid being blocked
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        }
         if self.cookie:
             headers['Cookie'] = self.cookie
         return headers
+    
+    @backoff.on_exception(
+        backoff.expo,
+        (aiohttp.ClientError, asyncio.TimeoutError),
+        max_tries=3,
+        max_time=30
+    )
+    async def _make_request(
+        self, 
+        endpoint: str, 
+        params: Optional[Dict[str, Any]] = None,
+        method: str = 'GET',
+        allow_redirects: bool = True
+    ) -> Optional[str]:
+        """Make an HTTP request for HTML content."""
+        import time
+        
+        if not self.session:
+            raise RuntimeError("Session not initialized. Use async context manager.")
+        
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        
+        # Get proxy from environment for Douban (since IP is blocked)
+        proxy = os.environ.get('HTTP_PROXY') or os.environ.get('http_proxy')
+        
+        start_time = time.time()
+        
+        # Log request details at DEBUG level
+        log_params = f" params={params}" if params else ""
+        logger.debug(f"[HTTP Request] {method} {url}{log_params}")
+        
+        try:
+            async with self.session.request(
+                method, url, 
+                params=params, 
+                proxy=proxy,
+                allow_redirects=False  # Don't auto-follow redirects to handle them manually
+            ) as response:
+                elapsed = time.time() - start_time
+                
+                # Log response at INFO level
+                status_emoji = "✓" if response.status < 400 else "✗"
+                logger.info(f"[HTTP] {status_emoji} {method} {url} -> {response.status} ({elapsed:.2f}s)")
+                
+                # Handle redirects manually
+                if response.status in (301, 302, 303, 307, 308):
+                    redirect_url = response.headers.get('Location')
+                    if redirect_url:
+                        # Handle relative redirects
+                        if redirect_url.startswith('/'):
+                            redirect_url = f"{self.base_url}{redirect_url}"
+                        logger.debug(f"[HTTP Redirect] {url} -> {redirect_url}")
+                        # Make request to redirect URL without proxy
+                        async with self.session.request(
+                            method, redirect_url, 
+                            params=params,
+                            allow_redirects=False
+                        ) as redirect_response:
+                            redirect_elapsed = time.time() - start_time
+                            status_emoji2 = "✓" if redirect_response.status < 400 else "✗"
+                            logger.info(f"[HTTP] {status_emoji2} {method} {redirect_url} -> {redirect_response.status} ({redirect_elapsed:.2f}s)")
+                            # Check for another redirect
+                            if redirect_response.status in (301, 302, 303, 307, 308):
+                                # Handle second redirect
+                                redirect_url2 = redirect_response.headers.get('Location')
+                                if redirect_url2:
+                                    if redirect_url2.startswith('/'):
+                                        redirect_url2 = f"{self.base_url}{redirect_url2}"
+                                    logger.debug(f"[HTTP Redirect] {redirect_url} -> {redirect_url2}")
+                                    async with self.session.request(
+                                        method, redirect_url2, 
+                                        params=params,
+                                        allow_redirects=False
+                                    ) as redirect_response2:
+                                        final_elapsed = time.time() - start_time
+                                        status_emoji3 = "✓" if redirect_response2.status < 400 else "✗"
+                                        logger.info(f"[HTTP] {status_emoji3} {method} {redirect_url2} -> {redirect_response2.status} ({final_elapsed:.2f}s)")
+                                        if redirect_response2.status == 200:
+                                            return await redirect_response2.text()
+                                        elif redirect_response2.status == 403:
+                                            logger.warning(f"[HTTP Forbidden] Access denied to {redirect_url2}")
+                                            return None
+                                        redirect_response2.raise_for_status()
+                                        return await redirect_response2.text()
+                            
+                            if redirect_response.status == 200:
+                                return await redirect_response.text()
+                            elif redirect_response.status == 403:
+                                logger.warning(f"[HTTP Forbidden] Access denied to {redirect_url}")
+                                return None
+                            redirect_response.raise_for_status()
+                            return await redirect_response.text()
+                
+                if response.status == 429:
+                    # Rate limited - wait and retry
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    logger.warning(f"[HTTP Rate Limited] {url} - waiting {retry_after}s before retry")
+                    await asyncio.sleep(retry_after)
+                    return await self._make_request(endpoint, params, method, allow_redirects)
+                
+                if response.status == 404:
+                    logger.warning(f"[HTTP Not Found] {url}")
+                    return None
+                
+                if response.status == 400:
+                    logger.warning(f"[HTTP Bad Request] {url}")
+                    return None
+                
+                if response.status == 403:
+                    logger.warning(f"[HTTP Forbidden] Access denied to {url}")
+                    return None
+                
+                response.raise_for_status()
+                
+                # Return text content (HTML) instead of JSON
+                try:
+                    return await response.text()
+                except Exception as e:
+                    # Handle brotli decoding errors
+                    if 'brotli' in str(e).lower() or 'content-encoding' in str(e).lower():
+                        logger.warning(f"[HTTP Decode Error] Content decoding error for {url}, trying raw read")
+                        # Try reading raw content
+                        return await response.read()
+                    raise
+                
+        except aiohttp.ClientError as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[HTTP Error] {method} {url} failed after {elapsed:.2f}s: {e}")
+            raise
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            logger.error(f"[HTTP Timeout] {method} {url} timed out after {elapsed:.2f}s")
+            raise
     
     async def collect_hot_posts(self, limit: Optional[int] = None) -> CollectionResult:
         """Collect hot posts from Douban groups."""
@@ -79,10 +218,18 @@ class DoubanCollector(BaseCollector):
         all_posts = []
         
         try:
-            # Collect from each configured group
-            for group_name in self._groups:
+            # First, try to discover hot groups
+            groups_to_collect = await self._discover_hot_groups()
+            
+            if not groups_to_collect:
+                # Fall back to configured groups if discovery fails
+                logger.warning("Using default groups as fallback")
+                groups_to_collect = self._groups
+            
+            # Collect from each group
+            for group_name in groups_to_collect:
                 try:
-                    posts = await self._collect_group_hot(group_name, limit // len(self._groups) + 1)
+                    posts = await self._collect_group_hot(group_name, limit // len(groups_to_collect) + 1)
                     all_posts.extend(posts)
                 except Exception as e:
                     logger.error(f"Error collecting from Douban group '{group_name}': {e}")
@@ -115,12 +262,18 @@ class DoubanCollector(BaseCollector):
         """Collect hot posts from a specific Douban group."""
         posts = []
         
-        # Try different URL patterns for Douban groups
-        urls_to_try = [
-            f"/group/{group_name}/",
-            f"/group/{group_name}/hot",
-            f"/group/{group_name}?sort=hot",
-        ]
+        # For numeric group IDs (new style), just use the base URL
+        # For text-based group names (old style), try different patterns
+        if group_name.isdigit():
+            urls_to_try = [
+                f"/group/{group_name}/",
+            ]
+        else:
+            urls_to_try = [
+                f"/group/{group_name}/",
+                f"/group/{group_name}/hot",
+                f"/group/{group_name}?sort=hot",
+            ]
         
         for endpoint in urls_to_try:
             try:
@@ -171,7 +324,7 @@ class DoubanCollector(BaseCollector):
                         title=title,
                         source=self.source,
                         url=f"https://www.douban.com/group/topic/{topic_id}",
-                        created_at=datetime.now(),  # Would need more parsing for actual time
+                        created_at=datetime.now(timezone.utc),  # Would need more parsing for actual time
                         comments_count=comments_count,
                         tags=[group_name],
                         category=group_name,
@@ -249,7 +402,7 @@ class DoubanCollector(BaseCollector):
                 try:
                     created_at = datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S")
                 except ValueError:
-                    created_at = datetime.now()
+                    created_at = datetime.now(timezone.utc)
             
             # Extract reply count
             reply_match = re.search(r'(\d+)\s*回应', html_content)
@@ -344,7 +497,7 @@ class DoubanCollector(BaseCollector):
                     
                     # Extract time
                     time_match = re.search(time_pattern, block)
-                    created_at = datetime.now()
+                    created_at = datetime.now(timezone.utc)
                     if time_match:
                         try:
                             created_at = datetime.strptime(time_match.group(1), "%Y-%m-%d %H:%M:%S")
@@ -458,7 +611,7 @@ class DoubanCollector(BaseCollector):
                     title=title,
                     source=self.source,
                     url=f"https://www.douban.com/group/topic/{topic_id}",
-                    created_at=datetime.now(),
+                    created_at=datetime.now(timezone.utc),
                     metadata={
                         'source': 'search'
                     }
@@ -500,31 +653,37 @@ class DoubanCollector(BaseCollector):
                 error_message=str(e)
             )
     
-    async def get_trending_groups(self) -> List[Dict[str, Any]]:
-        """Get a list of trending/hot Douban groups."""
-        endpoint = "/group/explore"
+    async def _discover_hot_groups(self) -> List[str]:
+        """Discover hot groups from Douban's hot groups page."""
+        url = f"{self.BASE_URL}/group/explore/hot_groups"
         
         try:
-            html_content = await self._make_request(endpoint)
+            html_content = await self._make_request("/group/explore/hot_groups")
             
             if not html_content:
+                logger.warning("Failed to fetch hot groups page")
                 return []
             
-            groups = []
-            # Parse group listings
-            group_pattern = r'<a[^>]+href="https://www\.douban\.com/group/([^/]+)/"[^>]*>([^<]+)</a>'
-            
+            # Parse group links from the hot groups page
+            # Pattern for group links: https://www.douban.com/group/xxxxx/
+            # Groups have numeric IDs or short names
+            group_pattern = r'href="https://www\.douban\.com/group/([a-zA-Z0-9]+)/"'
             matches = re.findall(group_pattern, html_content)
             
-            for group_id, group_name in matches:
-                groups.append({
-                    'id': group_id,
-                    'name': html.unescape(group_name.strip()),
-                    'url': f"https://www.douban.com/group/{group_id}/"
-                })
+            # Filter to get valid group names (alphanumeric, not too long)
+            groups = [m for m in matches if len(m) < 20 and m.isalnum()]
             
-            return groups
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_groups = []
+            for g in groups:
+                if g not in seen:
+                    seen.add(g)
+                    unique_groups.append(g)
+            
+            logger.info(f"Discovered {len(unique_groups)} hot groups")
+            return unique_groups[:10]  # Limit to top 10 groups
             
         except Exception as e:
-            logger.error(f"Error getting trending groups: {e}")
+            logger.error(f"Error discovering hot groups: {e}")
             return []

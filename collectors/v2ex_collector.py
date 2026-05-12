@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class V2EXCollector(BaseCollector):
     """Collector for V2EX posts and discussions."""
     
-    BASE_URL = "https://www.v2ex.com/api/v2"
+    BASE_URL = "https://www.v2ex.com/api"
     
     def __init__(self, config: CollectionConfig, token: Optional[str] = None):
         super().__init__(config)
@@ -53,7 +53,7 @@ class V2EXCollector(BaseCollector):
             
             data = await self._make_request(endpoint, params)
             
-            if not data or 'result' not in data:
+            if not data:
                 return CollectionResult(
                     source=self.source,
                     posts=[],
@@ -61,7 +61,10 @@ class V2EXCollector(BaseCollector):
                     error_message="No data returned from API"
                 )
             
-            for item in data['result']:
+            # V2EX API returns data directly, not wrapped in 'result'
+            items = data if isinstance(data, list) else data.get('result', [])
+            
+            for item in items:
                 post = self._parse_topic(item)
                 if post:
                     all_posts.append(post)
@@ -139,10 +142,12 @@ class V2EXCollector(BaseCollector):
         
         data = await self._make_request(endpoint)
         
-        if not data or 'result' not in data:
+        if not data:
             return None
         
-        post = self._parse_topic(data['result'])
+        # V2EX API returns data directly in 'result' or directly
+        topic_data = data.get('result', data) if isinstance(data, dict) else data
+        post = self._parse_topic(topic_data)
         
         if post:
             # Fetch replies
@@ -160,11 +165,14 @@ class V2EXCollector(BaseCollector):
         
         data = await self._make_request(endpoint, params)
         
-        if not data or 'result' not in data:
+        if not data:
             return []
         
+        # V2EX API returns data directly, not wrapped in 'result'
+        items = data if isinstance(data, list) else data.get('result', [])
+        
         comments = []
-        for item in data['result']:
+        for item in items:
             comment = self._parse_reply(item)
             if comment:
                 comments.append(comment)
@@ -234,7 +242,7 @@ class V2EXCollector(BaseCollector):
         try:
             data = await self._make_request(endpoint, params)
             
-            if not data or 'result' not in data:
+            if not data:
                 return CollectionResult(
                     source=self.source,
                     posts=[],
@@ -242,8 +250,11 @@ class V2EXCollector(BaseCollector):
                     error_message=f"No topics found for node: {node_name}"
                 )
             
+            # V2EX API returns data directly, not wrapped in 'result'
+            items = data if isinstance(data, list) else data.get('result', [])
+            
             posts = []
-            for item in data['result']:
+            for item in items:
                 post = self._parse_topic(item)
                 if post:
                     posts.append(post)
@@ -277,7 +288,7 @@ class V2EXCollector(BaseCollector):
         try:
             data = await self._make_request(endpoint, params)
             
-            if not data or 'result' not in data:
+            if not data:
                 return CollectionResult(
                     source=self.source,
                     posts=[],
@@ -285,8 +296,11 @@ class V2EXCollector(BaseCollector):
                     error_message="No latest topics found"
                 )
             
+            # V2EX API returns data directly, not wrapped in 'result'
+            items = data if isinstance(data, list) else data.get('result', [])
+            
             posts = []
-            for item in data['result']:
+            for item in items:
                 post = self._parse_topic(item)
                 if post:
                     posts.append(post)

@@ -257,6 +257,8 @@ class HackerNewsCollector(BaseCollector):
         limit: Optional[int] = None
     ) -> CollectionResult:
         """Search for posts on Hacker News using Algolia API."""
+        import time
+        
         limit = limit or self.config.max_posts
         
         # HN uses Algolia for search
@@ -267,10 +269,22 @@ class HackerNewsCollector(BaseCollector):
             'tags': 'story'
         }
         
+        start_time = time.time()
+        
+        # Log search request at DEBUG level
+        logger.debug(f"[HTTP Request] GET {search_url} params={params}")
+        
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(search_url, params=params) as response:
+                    elapsed = time.time() - start_time
+                    
+                    # Log response at INFO level
+                    status_emoji = "✓" if response.status == 200 else "✗"
+                    logger.info(f"[HTTP] {status_emoji} GET {search_url} -> {response.status} ({elapsed:.2f}s)")
+                    
                     if response.status != 200:
+                        logger.warning(f"[HTTP Error] Hacker News search failed with status {response.status}")
                         return CollectionResult(
                             source=self.source,
                             posts=[],
@@ -279,6 +293,8 @@ class HackerNewsCollector(BaseCollector):
                         )
                     
                     data = await response.json()
+                    
+                    logger.info(f"[Search Result] Hacker News search for '{query}' returned {len(data.get('hits', []))} results")
                     
                     posts = []
                     for hit in data.get('hits', []):
@@ -306,7 +322,8 @@ class HackerNewsCollector(BaseCollector):
                     )
                     
         except Exception as e:
-            logger.error(f"Error searching Hacker News: {e}")
+            elapsed = time.time() - start_time
+            logger.error(f"Error searching Hacker News after {elapsed:.2f}s: {e}")
             return CollectionResult(
                 source=self.source,
                 posts=[],

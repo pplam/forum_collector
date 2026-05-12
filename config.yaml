@@ -1,0 +1,194 @@
+api_enabled: true
+api_host: 0.0.0.0
+api_port: 8080
+app_name: Forum Collector
+collection_interval_hours: 1
+collectors:
+  dev_to:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params: {}
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: dev_to
+    tags_filter: []
+    time_range_hours: null
+  douban:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      groups:
+      - gossip
+      - tech
+      - programmer
+      - python
+      - ai
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: douban
+    tags_filter: []
+    time_range_hours: null
+  github:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      repositories:
+      - microsoft/vscode
+      - facebook/react
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 30
+    min_score: 0
+    source: github_discussions
+    tags_filter: []
+    time_range_hours: null
+  hacker_news:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      include_ask_hn: true
+      include_jobs: false
+      include_show_hn: true
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: hacker_news
+    tags_filter: []
+    time_range_hours: null
+  lobsters:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params: {}
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 30
+    min_score: 0
+    source: lobsters
+    tags_filter: []
+    time_range_hours: null
+  product_hunt:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params: {}
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 30
+    min_score: 0
+    source: product_hunt
+    tags_filter: []
+    time_range_hours: null
+  reddit:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      subreddits:
+      - programming
+      - technology
+      - python
+      - javascript
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: reddit
+    tags_filter: []
+    time_range_hours: null
+  stack_overflow:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      tags:
+      - python
+      - javascript
+      - java
+      - go
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: stack_overflow
+    tags_filter: []
+    time_range_hours: null
+  v2ex:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      nodes:
+      - python
+      - programmer
+      - share
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: v2ex
+    tags_filter: []
+    time_range_hours: null
+  zhihu:
+    access_token: null
+    api_key: null
+    api_secret: null
+    cookie: null
+    custom_params:
+      topics: []
+    enabled: true
+    exclude_keywords: []
+    keywords_filter: []
+    max_comments_per_post: 50
+    max_posts: 50
+    min_score: 0
+    source: zhihu
+    tags_filter: []
+    time_range_hours: null
+database_url: null
+debug: false
+default_max_comments: 50
+default_max_posts: 100
+log_level: INFO
+proxy_enabled: true
+proxy_url: http://127.0.0.1:7897
+rate_limit_enabled: true
+requests_per_second: 2
+storage_path: ./data
+storage_type: json

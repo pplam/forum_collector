@@ -223,6 +223,17 @@ def get_default_config() -> Settings:
                 custom_params={
                     'repositories': ['microsoft/vscode', 'facebook/react']
                 }
+            ),
+            'indie_hackers': CollectorConfig(
+                source=ForumSource.INDIE_HACKERS,
+                enabled=True,
+                max_posts=50,
+                custom_params={
+                    'categories': [],
+                    'include_ama': True,
+                    'include_milestones': True,
+                    'include_products': False
+                }
             )
         }
     )
@@ -286,8 +297,10 @@ def save_config(settings: Settings, config_path: str) -> bool:
         True if successful, False otherwise
     """
     try:
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        # Ensure directory exists (only if config_path contains a directory)
+        config_dir = os.path.dirname(config_path)
+        if config_dir:
+            os.makedirs(config_dir, exist_ok=True)
         
         data = settings.to_dict()
         

@@ -2,7 +2,7 @@
 """Data models for the forum collection service."""
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 from enum import Enum
 
@@ -84,11 +84,21 @@ class Post:
     def score(self) -> float:
         """Calculate a hotness score based on engagement metrics."""
         # Simple scoring algorithm - can be customized
-        engagement = self.upvotes - self.downvotes + (self.comments_count * 2) + (self.views * 0.01)
+        # Ensure all values are numbers
+        upvotes = int(self.upvotes or 0)
+        downvotes = int(self.downvotes or 0)
+        comments_count = int(self.comments_count or 0)
+        views = int(self.views or 0)
+        
+        engagement = upvotes - downvotes + (comments_count * 2) + (views * 0.01)
         
         # Time decay factor (posts lose hotness over time)
         if self.created_at:
-            hours_since_post = (datetime.now() - self.created_at).total_seconds() / 3600
+            # Ensure created_at is timezone-aware
+            created_at = self.created_at
+            if created_at.tzinfo is None:
+                created_at = created_at.replace(tzinfo=timezone.utc)
+            hours_since_post = (datetime.now(timezone.utc) - created_at).total_seconds() / 3600
             time_decay = 1 / (1 + hours_since_post ** 0.5)
             return engagement * time_decay
         
